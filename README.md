@@ -14,7 +14,7 @@ make
 ```
 4. Run this:
 ```
-java nachos.machine.Machine
+java nachos.machine.Machine -d -t
 ```
 
 # Running Test Cases: 
