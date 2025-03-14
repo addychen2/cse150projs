@@ -1,7 +1,9 @@
 # cse150proj1
 
 # Make sure java verion is correct
-```export JAVA_HOME=$(/usr/libexec/java_home -v 11```
+```
+export JAVA_HOME=$(/usr/libexec/java_home -v 11
+```
 
 To run:
 1. Go to whatever proj folder (proj0, proj1, proj2)
@@ -11,7 +13,9 @@ make clean
 make
 ```
 4. Run this:
-```java nachos.machine.Machine```
+```
+java nachos.machine.Machine
+```
 
 # Running Test Cases: 
 1. Canvas contains the test cases for each function. 
