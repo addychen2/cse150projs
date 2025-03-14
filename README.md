@@ -6,8 +6,10 @@
 To run:
 1. Go to whatever proj folder (proj0, proj1, proj2)
 2. Compile using this:
-```make clean```
-```make```
+```
+make clean
+make
+```
 4. Run this:
 ```java nachos.machine.Machine```
 
