@@ -1,9 +1,14 @@
 # cse150proj1
 
-Make sure java verion is correct
+# Make sure java verion is correct
 ```export JAVA_HOME=$(/usr/libexec/java_home -v 11```
 
-Running Test Cases: 
+To run:
+1. Go to whatever proj folder (proj0, proj1, proj2)
+2. Run this:
+```java nachos.machine.Machine```
+
+# Running Test Cases: 
 1. Canvas contains the test cases for each function. 
 2. Follow the instructions in that file & add the test case into the class
 3. Go into nachos > threads > ThreadedKernel.java
@@ -15,4 +20,6 @@ Running Test Cases:
 pwd     
 export PATH=$PATH:/insertpath      
 ```
+
+
 
