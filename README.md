@@ -15,6 +15,8 @@ make
 4. Run this:
 ```
 java nachos.machine.Machine -d -t
+# or
+nachos -d -t
 ```
 
 # Running Test Cases: 
