@@ -2,7 +2,7 @@
 
 # Make sure java verion is correct
 ```
-export JAVA_HOME=$(/usr/libexec/java_home -v 11
+export JAVA_HOME=$(/usr/libexec/java_home -v 11)
 ```
 
 To run:
