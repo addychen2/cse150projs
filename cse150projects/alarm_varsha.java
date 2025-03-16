@@ -43,7 +43,7 @@ public class Alarm {
      * Put the current thread to sleep for at least x ticks, waking it up
      * in the timer interrupt handler.
      * 
-     * @param x The minimum number of clock ticks to wait.
+     * The minimum number of clock ticks to wait.
      */
     public void waitUntil(long x) {
         if (x <=  0) return; // return if x is 0 or negative. 
