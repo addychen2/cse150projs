@@ -291,16 +291,15 @@ public class KThread {
 
 		Lib.assertTrue(this != currentThread);
 
-		if (status == statusFinished)
-			return;
-
 		boolean intStatus = Machine.interrupt().disable();
 
-		if (joinQueue == null)
-			joinQueue = ThreadedKernel.scheduler.newThreadQueue(true);
+		if (status != statusFinished) {
+			if (joinQueue == null)
+				joinQueue = ThreadedKernel.scheduler.newThreadQueue(true);
 
-		joinQueue.waitForAccess(currentThread);
-		sleep();
+			joinQueue.waitForAccess(currentThread);
+			sleep();
+		}
 
 		Machine.interrupt().restore(intStatus);
 	}
