@@ -16,16 +16,18 @@ public class Communicator {
 		 * Allocate a new communicator.
 		 */
 		private nachos.threads.Lock communicatorLock;
-		private nachos.threads.Condition speakerCondition;
-		private nachos.threads.Condition listenerCondition;
+		private nachos.threads.Condition2 speakerCondition;
+		private nachos.threads.Condition2 listenerCondition;
+		private boolean hasListener;
 		private boolean messageAvailable;
 		private int currentMessage;
 
 		public Communicator() {
 				communicatorLock = new nachos.threads.Lock();
-				speakerCondition = new nachos.threads.Condition(communicatorLock);
-				listenerCondition = new nachos.threads.Condition(communicatorLock);
+				speakerCondition = new nachos.threads.Condition2(communicatorLock);
+				listenerCondition = new nachos.threads.Condition2(communicatorLock);
 				messageAvailable = false;
+				hasListener = false;
 		}
 
 		/**
@@ -47,6 +49,9 @@ public class Communicator {
 				currentMessage = word;
 				messageAvailable = true;
 
+				if (!hasListener) {
+						speakerCondition.sleep();
+				}
 				listenerCondition.wake();
 
 				while (messageAvailable) {
@@ -63,12 +68,15 @@ public class Communicator {
 		 */
 		public int listen() {
 				communicatorLock.acquire();
+				hasListener = true;
+				speakerCondition.wake();
 
 				while (!messageAvailable) {
 						listenerCondition.sleep();
 				}
 				int message = currentMessage;
 				messageAvailable = false;
+				hasListener = false;
 
 				speakerCondition.wake();
 
@@ -106,9 +114,9 @@ class CommSelfTester {
 				selfTest4();
 				System.out.println("===== Test 4 Completed =====\n");
 
-				System.out.println("===== Starting Communicator Test 5 (Small) =====");
-				selfTest5Small();
-				System.out.println("===== Test 5 (Small) Completed =====\n");
+				System.out.println("===== Starting Communicator Test 5 big 100 s/l =====");
+				selfTest5();
+				System.out.println("===== Test 5 all 100 s/l Completed =====\n");
 		}
 
 	/**
@@ -245,34 +253,8 @@ class CommSelfTester {
 				System.out.println("Test 5: All 100 communications completed successfully!");
 	}
 
-		/**
-		 * Smaller stress test with 5 speakers and 5 listeners
-		 */
-		public static void selfTest5Small() {
-				KThread[] speakers = new KThread[5];
-				KThread[] listeners = new KThread[5];
 
-				for (int i = 0; i < 5; i++) {
-						System.out.println("Creating and forking Speaker-" + i);
-						speakers[i] = new KThread(speakerRun);
-						speakers[i].setName("Speaker-" + i);
-						speakers[i].fork();
-
-						System.out.println("Creating and forking Listener-" + i);
-						listeners[i] = new KThread(listenRun);
-						listeners[i].setName("Listener-" + i);
-						listeners[i].fork();
-				}
-
-				// Wait for all threads to complete
-				for (int i = 0; i < 5; i++) {
-						speakers[i].join();
-						listeners[i].join();
-				}
-
-				System.out.println("Test 5 (Small): All 5 communications completed successfully!");
-		}
-
+	
 	/**
 	 * Function to run inside Runnable object listenRun. Uses the function listen on
 	 * static object myComm inside this class, allowing the threads inside the
