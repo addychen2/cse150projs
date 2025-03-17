@@ -82,98 +82,192 @@ public class Communicator {
 //        3. run it.
 class CommSelfTester {
 
+    /**
+     * Run all tests one after another
+     */
+    public static void selfTestAll() {
+        System.out.println("===== Starting Communicator Test 1 =====");
+        selfTest1();
+        System.out.println("===== Test 1 Completed =====\n");
+        
+        System.out.println("===== Starting Communicator Test 2 =====");
+        selfTest2();
+        System.out.println("===== Test 2 Completed =====\n");
+        
+        System.out.println("===== Starting Communicator Test 3 =====");
+        selfTest3();
+        System.out.println("===== Test 3 Completed =====\n");
+        
+        System.out.println("===== Starting Communicator Test 4 =====");
+        selfTest4();
+        System.out.println("===== Test 4 Completed =====\n");
+        
+        System.out.println("===== Starting Communicator Test 5 (Small) =====");
+        selfTest5Small();
+        System.out.println("===== Test 5 (Small) Completed =====\n");
+    }
+    
 	/**
 	 * Test with 1 listener then 1 speaker.
 	 */
 	public static void selfTest1() {
-		
-		// System.out.print("Hello world");
+		System.out.println("Creating and forking listener1...");
 		KThread listener1 = new KThread(listenRun);
-		// System.out.print("Hello world2");
 		listener1.setName("listener1");
-		// System.out.print("Hello world3");
 		listener1.fork();
-		// System.out.print("Hello world4");
 
+		System.out.println("Creating and forking speaker1...");
 		KThread speaker1 = new KThread(speakerRun);
 		speaker1.setName("speaker1");
 		speaker1.fork();
-
-	} // selfTest1()
+        
+        // Wait for both threads to complete
+        listener1.join();
+        speaker1.join();
+        
+        System.out.println("Test 1: Communication completed successfully!");
+	}
 
 	/**
 	 * Test with 1 speaker then 1 listener.
 	 */
 	public static void selfTest2() {
-
+		System.out.println("Creating and forking speaker1...");
 		KThread speaker1 = new KThread(speakerRun);
 		speaker1.setName("speaker1");
 		speaker1.fork();
 
+		System.out.println("Creating and forking listener1...");
 		KThread listener1 = new KThread(listenRun);
 		listener1.setName("listener1");
 		listener1.fork();
-
-	} // selfTest2()
+        
+        // Wait for both threads to complete
+        speaker1.join();
+        listener1.join();
+        
+        System.out.println("Test 2: Communication completed successfully!");
+	}
 
 	/**
 	 * Test with 2 speakers and 2 listeners intermixed.
 	 */
 	public static void selfTest3() {
-
+		System.out.println("Creating and forking speaker1...");
 		KThread speaker1 = new KThread(speakerRun);
 		speaker1.setName("speaker1");
 		speaker1.fork();
 
+		System.out.println("Creating and forking listener1...");
 		KThread listener1 = new KThread(listenRun);
 		listener1.setName("listener1");
 		listener1.fork();
 
+		System.out.println("Creating and forking speaker2...");
 		KThread speaker2 = new KThread(speakerRun);
 		speaker2.setName("speaker2");
 		speaker2.fork();
 
+		System.out.println("Creating and forking listener2...");
 		KThread listener2 = new KThread(listenRun);
 		listener2.setName("listener2");
 		listener2.fork();
-
-	} // selfTest3()
+        
+        // Wait for all threads to complete
+        speaker1.join();
+        listener1.join();
+        speaker2.join();
+        listener2.join();
+        
+        System.out.println("Test 3: Communication completed successfully!");
+	}
 
 	/**
-	 * Second test with 2 speakers and 2 listeners intermixed.
+	 * Second test with 2 speakers then 2 listeners.
 	 */
 	public static void selfTest4() {
-
+		System.out.println("Creating and forking speaker1...");
 		KThread speaker1 = new KThread(speakerRun);
 		speaker1.setName("speaker1");
 		speaker1.fork();
 
+		System.out.println("Creating and forking speaker2...");
 		KThread speaker2 = new KThread(speakerRun);
 		speaker2.setName("speaker2");
 		speaker2.fork();
 
+		System.out.println("Creating and forking listener1...");
 		KThread listener1 = new KThread(listenRun);
 		listener1.setName("listener1");
 		listener1.fork();
 
+		System.out.println("Creating and forking listener2...");
 		KThread listener2 = new KThread(listenRun);
 		listener2.setName("listener2");
 		listener2.fork();
-
-	} // selfTest4()
+        
+        // Wait for all threads to complete
+        speaker1.join();
+        speaker2.join();
+        listener1.join();
+        listener2.join();
+        
+        System.out.println("Test 4: Communication completed successfully!");
+	}
 
 	/**
 	 * Stress test with 100 speakers and 100 listeners intermixed.
 	 */
 	public static void selfTest5() {
-
+        KThread[] speakers = new KThread[100];
+        KThread[] listeners = new KThread[100];
+        
 		for (int i = 0; i < 100; i++) {
-			new KThread(speakerRun).setName("Speaker " + Integer.toString(i)).fork();
+			speakers[i] = new KThread(speakerRun);
+            speakers[i].setName("Speaker-" + i);
+            speakers[i].fork();
 
-			new KThread(listenRun).setName("Listen " + Integer.toString(i)).fork();
+			listeners[i] = new KThread(listenRun);
+            listeners[i].setName("Listener-" + i);
+            listeners[i].fork();
 		}
+        
+        // Wait for all threads to complete
+        for (int i = 0; i < 100; i++) {
+            speakers[i].join();
+            listeners[i].join();
+        }
+        
+        System.out.println("Test 5: All 100 communications completed successfully!");
+	}
+    
+    /**
+     * Smaller stress test with 5 speakers and 5 listeners
+     */
+    public static void selfTest5Small() {
+        KThread[] speakers = new KThread[5];
+        KThread[] listeners = new KThread[5];
+        
+        for (int i = 0; i < 5; i++) {
+            System.out.println("Creating and forking Speaker-" + i);
+            speakers[i] = new KThread(speakerRun);
+            speakers[i].setName("Speaker-" + i);
+            speakers[i].fork();
 
-	} // selfTest5()
+            System.out.println("Creating and forking Listener-" + i);
+            listeners[i] = new KThread(listenRun);
+            listeners[i].setName("Listener-" + i);
+            listeners[i].fork();
+        }
+        
+        // Wait for all threads to complete
+        for (int i = 0; i < 5; i++) {
+            speakers[i].join();
+            listeners[i].join();
+        }
+        
+        System.out.println("Test 5 (Small): All 5 communications completed successfully!");
+    }
 
 	/**
 	 * Function to run inside Runnable object listenRun. Uses the function listen on
@@ -184,10 +278,13 @@ class CommSelfTester {
 	 */
 	static void listenFunction() {
 		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " is about to listen");
+        System.out.println("Thread " + KThread.currentThread().getName() + " is about to listen");
 
-		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " got value " + myComm.listen());
-
-	} // listenFunction()
+		int value = myComm.listen();
+        
+		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " got value " + value);
+        System.out.println("Thread " + KThread.currentThread().getName() + " got value " + value);
+	}
 
 	/**
 	 * Function to run inside Runnable object speakerRun. Uses the function listen
@@ -197,12 +294,16 @@ class CommSelfTester {
 	 * README for info on how to run in debug mode.
 	 */
 	static void speakFunction() {
-		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " is about to speak");
+        int value = myWordCount++;
+        
+		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " is about to speak value " + value);
+        System.out.println("Thread " + KThread.currentThread().getName() + " is about to speak value " + value);
 
-		myComm.speak(myWordCount++);
+		myComm.speak(value);
 
-		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " has spoken");
-	} // speakFunction()
+		Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " has spoken value " + (value));
+        System.out.println("Thread " + KThread.currentThread().getName() + " has spoken value " + (value));
+	}
 
 	/**
 	 * Wraps listenFunction inside a Runnable object so threads can be generated for
@@ -212,7 +313,7 @@ class CommSelfTester {
 		public void run() {
 			listenFunction();
 		}
-	}; // runnable listenRun
+	};
 
 	/**
 	 * Wraps speakFunction inside a Runnable object so threads can be generated for
@@ -222,7 +323,7 @@ class CommSelfTester {
 		public void run() {
 			speakFunction();
 		}
-	}; // Runnable speakerRun
+	};
 
 	// dbgThread = 't' variable needed for debug output
 	private static final char dbgThread = 't';
@@ -230,7 +331,4 @@ class CommSelfTester {
 	private static Communicator myComm = new Communicator();
 	// myWordCount is used for selfTest5 when spawning listening/speaking threads
 	private static int myWordCount = 0;
-
-} // CommSelfTester class
-
-
+}
