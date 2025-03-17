@@ -1,123 +1,153 @@
 package nachos.threads;
-
 import nachos.ag.BoatGrader;
 
 public class Boat {
-	static BoatGrader bg;
-
-	public static void selfTest() {
+	//Test cases: 
+	public static void selfTest() { 
 		BoatGrader b = new BoatGrader();
 
+		
 		System.out.println("\n ***Testing Boats with only 2 children***");
 		begin(0, 2, b);
 
-		// System.out.println("\n ***Testing Boats with 2 children, 1 adult***");
-		// begin(1, 2, b);
+		System.out.println("\n ***Testing Boats with 2 children, 1 adult***");
+		begin(1, 2, b);
 
-		// System.out.println("\n ***Testing Boats with 3 children, 3 adults***");
-		// begin(3, 3, b);
-	}
+		System.out.println("\n ***Testing Boats with 3 children, 3 adults***");
+		begin(3, 3, b);
+    }
 
-	private static Lock boatLock;
-	private static Condition2 adultCondition;
-	private static Condition2 childCondition;
-	private static int adultsOnOahu;
-	private static int childrenOnOahu;
-	private static boolean boatOnOahu;
-	private static boolean pilotReady;
+	//Initializing variables
+    static BoatGrader bg;
 
-	public static void begin(int adults, int children, BoatGrader b) {
-		bg = b;
+    private static int childrenOnOahu;
+    private static int childrenOnMolokai;
+    private static int adultsOnOahu;
+    private static int adultsOnMolokai;
+    private static int childrenReady;
+    private static int boatPassengers;
 
-		boatLock = new Lock();
-		adultCondition = new Condition2(boatLock);
-		childCondition = new Condition2(boatLock);
-		adultsOnOahu = adults;
-		childrenOnOahu = children;
-		boatOnOahu = true;
-		pilotReady = false;
+    private static boolean boatAtOahu;
 
-		for (int i = 0; i < adults; i++) {
-			KThread t = new KThread(new Runnable() {
-				public void run() {
-					AdultItinerary();
-				}
-			});
-			t.setName("Adult " + i);
-			t.fork();
-		}
+	//Locks and conditions to ensure that only people on a particular island can board the boat
+    private static Lock oahuLock = new Lock();
+    private static Lock molokaiLock = new Lock();
 
-		for (int i = 0; i < children; i++) {
-			KThread t = new KThread(new Runnable() {
-				public void run() {
-					ChildItinerary();
-				}
-			});
-			t.setName("Child " + i);
-			t.fork();
-		}
-	}
+	//Conditions to make thread wait until certain conditions are met. So long as conditions aren't met, thread waits to prevent race conditions
+    private static Condition adultsWaiting = new Condition(oahuLock); //Adults waiting until all children have crossed
+    private static Condition childWaitingOnMolokai = new Condition(molokaiLock); //Children has crossed and must signal to other children
+    private static Condition childWaitingOnOahu = new Condition(oahuLock); //Children waitting to cross, 
+    private static Condition childBoarding = new Condition(oahuLock); //Children waiting to board the boat
 
-	static void AdultItinerary() {
-		boatLock.acquire();
-		while (true) {
-			while (!boatOnOahu || childrenOnOahu > 1) {
-				adultCondition.sleep();
+    private static Semaphore doneSem = new Semaphore(0); //Semaphore to signal that all threads have finished, no thread can proceed until another thread releases it
+
+    public static void begin(int adults, int children, BoatGrader b) {
+        bg = b;
+        childrenOnOahu = children;
+        childrenOnMolokai = 0;
+        adultsOnOahu = adults;
+        adultsOnMolokai = 0;
+        childrenReady = 0;
+        boatPassengers = 0;
+        boatAtOahu = true;
+
+		//executing threads for children and adults
+        for (int i = 0; i < children; i++) {
+            new KThread(() -> ChildItinerary()).setName("Child " + i).fork();
+        }
+
+        for (int i = 0; i < adults; i++) {
+            new KThread(() -> AdultItinerary()).setName("Adult " + i).fork();
+        }
+        doneSem.P(); //no more threads
+    }
+
+    static void AdultItinerary() {
+        oahuLock.acquire();
+        while (childrenOnOahu > 1 || !boatAtOahu) { //Adults will wait to cross until there is only 1 or 0 children on the island
+            adultsWaiting.sleep(); //automatically release the lock 
+        }
+		//Once awakened by boat adult regains lock & crosses
+        adultsOnOahu--;
+        boatAtOahu = false;
+        oahuLock.release();
+
+        bg.AdultRowToMolokai();
+
+        molokaiLock.acquire();
+        adultsOnMolokai++;
+        childWaitingOnMolokai.wake(); //wake the first child waiting on Molokai to row back, since a child must always row back
+        molokaiLock.release();
+    }
+
+    static void ChildItinerary() {
+        while (childrenOnOahu + adultsOnOahu > 1) { //loop until only 1 person left 
+            oahuLock.acquire();
+            if (childrenOnOahu == 1) { //1 child left, they can take an adult
+                adultsWaiting.wake();
+            }
+            while (childrenReady >= 2 || !boatAtOahu) { //Children wait for boat to cross
+                childWaitingOnOahu.sleep();
+            }
+            if (childrenReady == 0) {  //If no children in line, one wakes themselves up
+                childrenReady++;
+                childWaitingOnOahu.wake();
+                childBoarding.sleep();
+                bg.ChildRideToMolokai();
+                childBoarding.wake();
+            } else {
+                childrenReady++;
+                childBoarding.wake();
+                bg.ChildRowToMolokai();
+                childBoarding.sleep();
+            }
+            childrenReady--;
+            childrenOnOahu--;
+            boatAtOahu = false;
+            oahuLock.release();
+
+            molokaiLock.acquire();
+            childrenOnMolokai++;
+            boatPassengers++;
+
+			boolean everyoneOnMolokai = false;
+			oahuLock.acquire();
+			if (childrenOnOahu == 0 && adultsOnOahu == 0) {
+				everyoneOnMolokai = true;
 			}
-			if (adultsOnOahu > 0 && childrenOnOahu <= 1) {
-				adultsOnOahu--;
-				boatOnOahu = false;
-				bg.AdultRowToMolokai();
-				childCondition.wake();
-				boatLock.release();
-				break;
-			}
-			adultCondition.sleep();
-		}
-	}
+			oahuLock.release();
 
-	static void ChildItinerary() {
-		boatLock.acquire();
-		while (true) {
-			while (!boatOnOahu || pilotReady) {
-				childCondition.sleep();
-			}
-
-			if (childrenOnOahu > 1) {
-				pilotReady = true;
-				childrenOnOahu--;
-				childCondition.wake();
-				while (pilotReady) {
-					childCondition.sleep();
+			if (everyoneOnMolokai) {
+				if (boatPassengers == 1) {
+					childWaitingOnMolokai.wake();
 				}
-				bg.ChildRideToMolokai();
-				boatLock.release();
-				break;
-			} else if (childrenOnOahu == 1) {
-				if (!pilotReady) {
-					childrenOnOahu--;
-					boatOnOahu = false;
-					bg.ChildRowToMolokai();
-					adultCondition.wake();
-					boatLock.release();
-					break;
-				}
-			} else {
-				childCondition.sleep();
+				molokaiLock.release();
+				doneSem.V();
+				return;
 			}
-		}
-	}
+			if (boatPassengers == 1) {
+				childWaitingOnMolokai.sleep();
+			}
+			childrenOnMolokai--;
+			boatPassengers = 0;
+			molokaiLock.release();
+			
+			bg.ChildRowToOahu();
+			oahuLock.acquire();
+			childrenOnOahu++;
+			boatAtOahu = true;
+			oahuLock.release();
+        }
 
-	static void SampleItinerary() {
-		// Please note that this isn't a valid solution (you can't fit
-		// all of them on the boat). Please also note that you may not
-		// have a single thread calculate a solution and then just play
-		// it back at the autograder -- you will be caught.
-		System.out.println("\n ***Everyone piles on the boat and goes to Molokai***");
-		bg.AdultRowToMolokai();
-		bg.ChildRideToMolokai();
-		bg.AdultRideToMolokai();
-		bg.ChildRideToMolokai();
-	}
-
+		//Final person must always be a child which is guaranteed, since adults will always sail over if there is only 1 child,
+        //and the children sail over if there are adults.
+		oahuLock.acquire();
+		childrenOnOahu--;
+		oahuLock.release();
+		bg.ChildRowToMolokai();
+		molokaiLock.acquire();
+		childrenOnMolokai++;
+		molokaiLock.release();
+		doneSem.V();
+    }
 }
