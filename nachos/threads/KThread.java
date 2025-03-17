@@ -198,10 +198,13 @@ public class KThread {
 
 		Machine.autoGrader().finishingCurrentThread();
 
+		// Wake up any threads waiting for this thread to finish
 		if (currentThread.joinQueue != null) {
 			KThread thread = currentThread.joinQueue.nextThread();
-			if (thread != null)
+			while (thread != null) {
 				thread.ready();
+				thread = currentThread.joinQueue.nextThread();
+			}
 		}
 
 		Lib.assertTrue(toBeDestroyed == null);
@@ -290,17 +293,26 @@ public class KThread {
 		Lib.debug(dbgThread, "Joining to thread: " + toString());
 
 		Lib.assertTrue(this != currentThread);
-
+		
+		// If thread is already finished, return immediately
+		if (status == statusFinished)
+			return;
+		
+		// Disable interrupts to ensure atomicity during this critical section
 		boolean intStatus = Machine.interrupt().disable();
-
-		if (status != statusFinished) {
-			if (joinQueue == null)
-				joinQueue = ThreadedKernel.scheduler.newThreadQueue(true);
-
-			joinQueue.waitForAccess(currentThread);
-			sleep();
-		}
-
+		
+		// Create a join queue for this thread if it doesn't exist
+		if (joinQueue == null)
+			joinQueue = ThreadedKernel.scheduler.newThreadQueue(false);
+		
+		// Put the current thread in the join queue
+		joinQueue.acquire(this);  // The current thread is waiting on this thread
+		joinQueue.waitForAccess(currentThread);
+		
+		// Current thread sleeps until this thread wakes it up
+		currentThread.sleep();
+		
+		// Restore interrupts to their previous state
 		Machine.interrupt().restore(intStatus);
 	}
 
@@ -414,7 +426,7 @@ public class KThread {
 		}
 
 		public void run() {
-			for (int i = 0; i < 5; i++) {
+			for (int i = 0; i < 5; i++) { // Keeping the reduced count for testing
 				System.out.println("*** thread " + which + " looped " + i
 						+ " times");
 				currentThread.yield();
@@ -429,10 +441,83 @@ public class KThread {
 	 */
 	public static void selfTest() {
 		Lib.debug(dbgThread, "Enter KThread.selfTest");
-
+		
+		// Original test
 		new KThread(new PingTest(1)).setName("forked thread").fork();
 		new PingTest(0).run();
+		
+		// Test joinTest1 - child finishes before parent calls join
+		System.out.println("\n*** Testing joinTest1 ***");
+		joinTest1();
+		
+		// Test joinTest2 - parent calls join before child finishes
+		System.out.println("\n*** Testing joinTest2 ***");
+		joinTest2();
 	}
+
+	// Simple test for the situation where the child finishes before
+	// the parent calls join on it.
+	private static void joinTest1() {
+		KThread child1 = new KThread(new Runnable() {
+			public void run() {
+				System.out.println("I (heart) Nachos!");
+			}
+		});
+		child1.setName("child1").fork();
+
+		// We want the child to finish before we call join. Although
+		// our solutions to the problems cannot busy wait, our test
+		// programs can!
+
+		for (int i = 0; i < 5; i++) {
+			System.out.println("busy...");
+			KThread.currentThread().yield();
+		}
+
+		child1.join();
+		System.out.println("After joining, child1 should be finished.");
+		System.out.println("is it? " + (child1.status == statusFinished));
+		Lib.assertTrue((child1.status == statusFinished), "Expected child1 to be finished.");
+	}
+	
+	// Test for the situation where the parent calls join before the child finishes
+	private static void joinTest2() {
+		/**
+         * Allocate a new thread setting the target to point to a 
+         * PingTest object whose run method will be called when the 
+         * newly created thread executes. 
+         */
+        KThread th1 = new KThread(new PingTest(1));
+        /**
+         * Set the name of the new thread to "forked thread 1" 
+         */
+        th1.setName("forked thread 1");
+        /**
+         * Execute fork() to begin execution of the new thread 
+         * (putting it in the ready queue). This new thread will 
+         * eventually execute the PingTest object's run() method when
+         * scheduled. The current thread (that created this new thread) 
+         * will return from the fork() method call resuming its own 
+         * execution, thus, giving us 2 concurrent thread.
+         */
+        th1.fork();
+        
+        System.out.println("Main thread about to join with th1.");
+        /**
+         * Current thread calls join() on the newly created thread 
+         * thus going to sleep till th1 finishes.
+         */
+        th1.join(); 
+        System.out.println("Main thread joined with th1.");
+        
+        /**
+         * Try to join with th1 again. This should immediately return
+         * as th1 should have already finished.
+         */
+        System.out.println("Main thread about to join with th1 again.");
+        th1.join();
+        System.out.println("Second join returned immediately as expected.");
+    }
 
 	private static final char dbgThread = 't';
 
@@ -482,10 +567,9 @@ public class KThread {
 	private static KThread toBeDestroyed = null;
 
 	private static KThread idleThread = null;
-
-	/** The thread queue for threads waiting on join() */
+	
+	/**
+	 * Queue for threads waiting for this thread to finish.
+	 */
 	private ThreadQueue joinQueue = null;
-
-	/** Flag to track if join() has been called */
-	private boolean joinCalled = false;
 }
