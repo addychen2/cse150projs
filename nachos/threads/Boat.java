@@ -53,11 +53,15 @@ public class Boat {
 
 		//executing threads for children and adults
         for (int i = 0; i < children; i++) {
-            new KThread(() -> ChildItinerary()).setName("Child " + i).fork();
+            KThread t1 = new KThread(new Runnable() { public void run() { ChildItinerary(); }});
+            t1.setName("Child " + i);
+            t1.fork();
         }
 
         for (int i = 0; i < adults; i++) {
-            new KThread(() -> AdultItinerary()).setName("Adult " + i).fork();
+            KThread t2 = new KThread(new Runnable() { public void run() { AdultItinerary(); }});
+            t2.setName("Adult " + i);
+            t2.fork();
         }
         doneSem.P(); //no more threads
     }

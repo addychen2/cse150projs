@@ -153,7 +153,7 @@ public class Condition2 {
         final Lock lock = new Lock();
         // final Condition empty = new Condition(lock);
         final Condition2 empty = new Condition2(lock);
-        final LinkedList<Integer> list = new LinkedList<>();
+        final LinkedList<Integer> list = new LinkedList<Integer>();
 
         KThread consumer = new KThread( new Runnable () {
                 public void run() {
