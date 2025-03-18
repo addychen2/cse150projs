@@ -150,6 +150,7 @@ public class Condition2 {
 
 	//Test Phase Begin 
     public static void cvTest5() {
+	System.out.println("===== Starting Condition Test: Producer and Consumer =====");
         final Lock lock = new Lock();
         // final Condition empty = new Condition(lock);
         final Condition2 empty = new Condition2(lock);
