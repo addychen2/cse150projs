@@ -115,6 +115,9 @@ public class Communicator {
 
 // Class CommSelfTester remains the same
 class CommSelfTester {
+    // Lock for synchronizing the test operations
+    private static nachos.threads.Lock testLock = new nachos.threads.Lock();
+    
     /**
      * Run all tests one after another
      */
@@ -304,14 +307,10 @@ class CommSelfTester {
         // Get the value
         int value = myComm.listen();
         
-        // Let's manually manipulate output to ensure correct order
-        // Instead of printing got value immediately, store it in receivedValues
-        // Print will happen later in speakFunction
-        synchronized(CommSelfTester.class) {
-            receivedValues.put(value, threadName);
-        }
-        
-        // We won't print here - the speaker thread will handle this
+        // Replace synchronized block with Lock usage
+        testLock.acquire();
+        receivedValues.put(value, threadName);
+        testLock.release();
     }
 
     /**
@@ -319,7 +318,12 @@ class CommSelfTester {
      */
     static void speakFunction() {
         String threadName = KThread.currentThread().getName();
-        int value = myWordCount++;
+        int value;
+        
+        // Use the lock to safely increment the counter
+        testLock.acquire();
+        value = myWordCount++;
+        testLock.release();
 
         Lib.debug(dbgThread, "Thread " + threadName + " is about to speak value " + value);
         System.out.println("Thread " + threadName + " is about to speak value " + value);
@@ -330,13 +334,14 @@ class CommSelfTester {
         System.out.println("Thread " + threadName + " has spoken value " + value);
         
         // Now that we've printed that we've spoken, print the listener message
-        synchronized(CommSelfTester.class) {
-            if (receivedValues.containsKey(value)) {
-                String listenerName = receivedValues.remove(value);
-                Lib.debug(dbgThread, "Thread " + listenerName + " got value " + value);
-                System.out.println("Thread " + listenerName + " got value " + value);
-            }
+        // Replace synchronized block with Lock usage
+        testLock.acquire();
+        if (receivedValues.containsKey(value)) {
+            String listenerName = receivedValues.remove(value);
+            Lib.debug(dbgThread, "Thread " + listenerName + " got value " + value);
+            System.out.println("Thread " + listenerName + " got value " + value);
         }
+        testLock.release();
     }
 
     private static Runnable listenRun = new Runnable() {
