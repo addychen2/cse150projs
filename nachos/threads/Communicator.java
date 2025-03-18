@@ -31,7 +31,7 @@ public class Communicator {
         listenerCondition = new nachos.threads.Condition2(communicatorLock);
         waitingSpeakers = 0;
         waitingListeners = 0;
-        messageQueue = new TreeMap<>();
+        messageQueue = new TreeMap<Integer, Integer>();
         nextMessageToSpeak = 0;
         nextMessageToListen = 0;
     }
@@ -354,5 +354,5 @@ class CommSelfTester {
     private static final char dbgThread = 't';
     private static Communicator myComm = new Communicator();
     private static int myWordCount = 0;
-    private static TreeMap<Integer, String> receivedValues = new TreeMap<>();
+    private static TreeMap<Integer, String> receivedValues = new TreeMap<Integer, String>();
 }

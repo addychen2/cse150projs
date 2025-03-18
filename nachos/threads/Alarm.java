@@ -29,7 +29,7 @@ public class Alarm {
     }
 
     // Priority queue to store sleeping threads, ordered by wake-up time
-    private PriorityQueue<WaitingThread> waitQueue = new PriorityQueue<>();
+    private PriorityQueue<WaitingThread> waitQueue = new PriorityQueue<WaitingThread>();
 
     public Alarm() {
         // Set the timer interrupt handler to call timerInterrupt() periodically
@@ -91,9 +91,9 @@ public class Alarm {
             this.wakeTime = wakeTime;
         }
 
-        @Override //is overwriting the method
+        // Implementing comparable interface
         public int compareTo(WaitingThread other) {
-            return Long.compare(this.wakeTime, other.wakeTime); 
+            return (this.wakeTime < other.wakeTime) ? -1 : ((this.wakeTime > other.wakeTime) ? 1 : 0);
         }
     }
 }
