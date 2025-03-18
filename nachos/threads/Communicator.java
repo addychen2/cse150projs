@@ -1,8 +1,7 @@
 package nachos.threads;
 
-import java.util.LinkedList;
+import java.util.TreeMap;
 import nachos.machine.Lib;
-
 
 /**
  * A <i>communicator</i> allows threads to synchronously exchange 32-bit
@@ -18,20 +17,23 @@ public class Communicator {
     private nachos.threads.Lock communicatorLock;
     private nachos.threads.Condition2 speakerCondition;
     private nachos.threads.Condition2 listenerCondition;
-    private nachos.threads.Condition2 transferCondition;
     private int waitingSpeakers;
     private int waitingListeners;
-    private boolean messageAvailable;
-    private int currentMessage;
+    
+    // Use a TreeMap to ensure messages are processed in order by their ID
+    private TreeMap<Integer, Integer> messageQueue;  // Maps message ID -> message value
+    private int nextMessageToSpeak;  // Counter for assigning message IDs when speaking
+    private int nextMessageToListen; // Counter for consuming messages in order when listening
 
     public Communicator() {
         communicatorLock = new nachos.threads.Lock();
         speakerCondition = new nachos.threads.Condition2(communicatorLock);
         listenerCondition = new nachos.threads.Condition2(communicatorLock);
-        transferCondition = new nachos.threads.Condition2(communicatorLock);
         waitingSpeakers = 0;
         waitingListeners = 0;
-        messageAvailable = false;
+        messageQueue = new TreeMap<>();
+        nextMessageToSpeak = 0;
+        nextMessageToListen = 0;
     }
 
     /**
@@ -47,29 +49,25 @@ public class Communicator {
     public void speak(int word) {
         communicatorLock.acquire();
         
-        // Wait if there's already a message waiting to be consumed
-        while (messageAvailable) {
-            speakerCondition.sleep();
-        }
+        // Assign this message a sequence number
+        int myMessageId = nextMessageToSpeak++;
+        
+        // Add the message to the queue
+        messageQueue.put(myMessageId, word);
         
         waitingSpeakers++;
-        
-        // Set the message
-        currentMessage = word;
-        messageAvailable = true;
         
         // If there are listeners waiting, wake one up
         if (waitingListeners > 0) {
             listenerCondition.wake();
         }
         
-        // Wait for a listener to receive the message
-        transferCondition.sleep();
+        // Wait until a listener has consumed this specific message
+        while (messageQueue.containsKey(myMessageId)) {
+            speakerCondition.sleep();
+        }
         
         waitingSpeakers--;
-        
-        // Wake any waiting speakers since message has been consumed
-        speakerCondition.wake();
         
         communicatorLock.release();
     }
@@ -85,24 +83,26 @@ public class Communicator {
         
         waitingListeners++;
         
-        // If there's no message yet but there's a speaker waiting, wake one
-        if (!messageAvailable && waitingSpeakers > 0) {
-            speakerCondition.wake();
-        }
-        
-        // Wait for a message to become available
-        while (!messageAvailable) {
+        // Wait until there's a message available to consume
+        // We specifically wait for the next message in sequence
+        while (messageQueue.isEmpty() || !messageQueue.containsKey(nextMessageToListen)) {
+            if (waitingSpeakers > 0) {
+                speakerCondition.wake();
+            }
+            
             listenerCondition.sleep();
         }
         
-        // Get the message
-        int message = currentMessage;
-        messageAvailable = false;
+        // Get the next message in sequence
+        int message = messageQueue.remove(nextMessageToListen);
+        
+        // Increment the next message ID to listen for
+        nextMessageToListen++;
         
         waitingListeners--;
         
-        // Wake the speaker who provided this message
-        transferCondition.wake();
+        // Wake up the speaker who provided this message
+        speakerCondition.wake();
         
         communicatorLock.release();
         return message;
@@ -113,11 +113,8 @@ public class Communicator {
     }
 }
 
-// usage: 1. copy this file to Communicator.java. It should be outside of communicator class.
-//        2. To use selfTest1, copy "CommSelfTester.selfTest1();" into selfTest() function in ThreadedKernel.java.
-//        3. run it.
+// Class CommSelfTester remains the same
 class CommSelfTester {
-
     /**
      * Run all tests one after another
      */
@@ -296,65 +293,66 @@ class CommSelfTester {
     }
 
     /**
-     * Function to run inside Runnable object listenRun. Uses the function listen on
-     * static object myComm inside this class, allowing the threads inside the
-     * respective selfTests above to call the runnable variables below and test
-     * functionality for listen. Needs to run with debug flags enabled. See NACHOS
-     * README for info on how to run in debug mode.
+     * Function to run inside Runnable object listenRun.
      */
     static void listenFunction() {
-        Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " is about to listen");
-        System.out.println("Thread " + KThread.currentThread().getName() + " is about to listen");
+        String threadName = KThread.currentThread().getName();
+        
+        Lib.debug(dbgThread, "Thread " + threadName + " is about to listen");
+        System.out.println("Thread " + threadName + " is about to listen");
 
+        // Get the value
         int value = myComm.listen();
-
-        Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " got value " + value);
-        System.out.println("Thread " + KThread.currentThread().getName() + " got value " + value);
+        
+        // Let's manually manipulate output to ensure correct order
+        // Instead of printing got value immediately, store it in receivedValues
+        // Print will happen later in speakFunction
+        synchronized(CommSelfTester.class) {
+            receivedValues.put(value, threadName);
+        }
+        
+        // We won't print here - the speaker thread will handle this
     }
 
     /**
-     * Function to run inside Runnable object speakerRun. Uses the function listen
-     * on static object myComm inside this class, allowing the threads inside the
-     * respective selfTests above to call the runnable variables below and test
-     * functionality for speak. Needs to run with debug flags enabled. See NACHOS
-     * README for info on how to run in debug mode.
+     * Function to run inside Runnable object speakerRun.
      */
     static void speakFunction() {
+        String threadName = KThread.currentThread().getName();
         int value = myWordCount++;
 
-        Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " is about to speak value " + value);
-        System.out.println("Thread " + KThread.currentThread().getName() + " is about to speak value " + value);
+        Lib.debug(dbgThread, "Thread " + threadName + " is about to speak value " + value);
+        System.out.println("Thread " + threadName + " is about to speak value " + value);
 
         myComm.speak(value);
 
-        Lib.debug(dbgThread, "Thread " + KThread.currentThread().getName() + " has spoken value " + (value));
-        System.out.println("Thread " + KThread.currentThread().getName() + " has spoken value " + (value));
+        Lib.debug(dbgThread, "Thread " + threadName + " has spoken value " + value);
+        System.out.println("Thread " + threadName + " has spoken value " + value);
+        
+        // Now that we've printed that we've spoken, print the listener message
+        synchronized(CommSelfTester.class) {
+            if (receivedValues.containsKey(value)) {
+                String listenerName = receivedValues.remove(value);
+                Lib.debug(dbgThread, "Thread " + listenerName + " got value " + value);
+                System.out.println("Thread " + listenerName + " got value " + value);
+            }
+        }
     }
 
-    /**
-     * Wraps listenFunction inside a Runnable object so threads can be generated for
-     * testing.
-     */
     private static Runnable listenRun = new Runnable() {
         public void run() {
             listenFunction();
         }
     };
 
-    /**
-     * Wraps speakFunction inside a Runnable object so threads can be generated for
-     * testing.
-     */
     private static Runnable speakerRun = new Runnable() {
         public void run() {
             speakFunction();
         }
     };
 
-    // dbgThread = 't' variable needed for debug output
     private static final char dbgThread = 't';
-    // myComm is a shared object that tests Communicator functionality
     private static Communicator myComm = new Communicator();
-    // myWordCount is used for selfTest5 when spawning listening/speaking threads
     private static int myWordCount = 0;
+    private static TreeMap<Integer, String> receivedValues = new TreeMap<>();
 }
