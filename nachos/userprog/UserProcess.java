@@ -383,6 +383,76 @@ public class UserProcess {
 	}
 	
 	/**
+	 * Handle the create() system call.
+	 */
+	private int handleCreate(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Find an available slot in the file table
+		int fileDescriptor = -1;
+		for (int i = 0; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fileDescriptor = i;
+				break;
+			}
+		}
+		
+		// If no slot is available, return error
+		if (fileDescriptor == -1) {
+			return -1;
+		}
+		
+		// Create or open the file (true = create if doesn't exist)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
+		if (file == null) {
+			return -1;
+		}
+		
+		// Store the file in the file table
+		myFileSlots[fileDescriptor] = file;
+		return fileDescriptor;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 */
+	private int handleOpen(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Find an available slot in the file table
+		int fileDescriptor = -1;
+		for (int i = 0; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fileDescriptor = i;
+				break;
+			}
+		}
+		
+		// If no slot is available, return error
+		if (fileDescriptor == -1) {
+			return -1;
+		}
+		
+		// Open the file (without creating)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+		if (file == null) {
+			return -1;
+		}
+		
+		// Store the file in the file table
+		myFileSlots[fileDescriptor] = file;
+		return fileDescriptor;
+	}
+	
+	/**
 	 * Handle the read() system call.
 	 */
 	private int handleRead(int fileDescriptor, int bufferVAddr, int count) {
@@ -479,6 +549,41 @@ public class UserProcess {
 		
 		return totalBytesWritten;
 	}
+	
+	/**
+	 * Handle the close() system call.
+	 */
+	private int handleClose(int fileDescriptor) {
+		// Validate file descriptor
+		if (fileDescriptor < 0 || fileDescriptor >= myFileSlots.length || 
+			myFileSlots[fileDescriptor] == null) {
+			return -1;
+		}
+		
+		// Close the file
+		myFileSlots[fileDescriptor].close();
+		myFileSlots[fileDescriptor] = null;
+		return 0;
+	}
+	
+	/**
+	 * Handle the unlink() system call.
+	 */
+	private int handleUnlink(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Remove the file from the file system
+		boolean success = ThreadedKernel.fileSystem.remove(filename);
+		if (success) {
+			return 0;
+		} else {
+			return -1;
+		}
+	}
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
@@ -552,11 +657,18 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
+		case syscallCreate:
+			return handleCreate(a0);
+		case syscallOpen:
+			return handleOpen(a0);
 		case syscallRead:
 			return handleRead(a0, a1, a2);
 		case syscallWrite:
 			return handleWrite(a0, a1, a2);
-
+		case syscallClose:
+			return handleClose(a0);
+		case syscallUnlink:
+			return handleUnlink(a0);
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
 			Lib.assertNotReached("Unknown system call!");
