@@ -1,3 +1,13 @@
+protected OpenFile[] myFileSlots;
+public UserProcess() {
+    //Initialize OpenFiles array
+
+    myFileSlots = new OpenFile[16];
+
+    myFileSlots[0] = UserKernel.console.openForReading();  // stdin
+    myFileSlots[1] = UserKernel.console.openForWriting();  // stdout
+}
+
 public void handleException(int problem) {
     Processor processor = Machine.processor();
 
@@ -20,3 +30,4 @@ public void handleException(int problem) {
             break;
     }
 }
+
