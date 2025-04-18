@@ -28,7 +28,7 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
-            
+		
 		// Project 2 Task 1: Initialize OpenFiles array
 		myFileSlots = new OpenFile[16];
 		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
@@ -381,7 +381,7 @@ public class UserProcess {
 
 		return 0;
 	}
-
+	
 	/**
 	 * Handle the read() system call.
 	 */
