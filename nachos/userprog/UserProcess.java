@@ -28,6 +28,14 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+		
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
+		// File descriptor 0 refers to keyboard input (UNIX stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (UNIX stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
 	}
 
 	/**
@@ -373,6 +381,209 @@ public class UserProcess {
 
 		return 0;
 	}
+	
+	/**
+	 * Handle the create() system call.
+	 */
+	private int handleCreate(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Find an available slot in the file table
+		int fileDescriptor = -1;
+		for (int i = 0; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fileDescriptor = i;
+				break;
+			}
+		}
+		
+		// If no slot is available, return error
+		if (fileDescriptor == -1) {
+			return -1;
+		}
+		
+		// Create or open the file (true = create if doesn't exist)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
+		if (file == null) {
+			return -1;
+		}
+		
+		// Store the file in the file table
+		myFileSlots[fileDescriptor] = file;
+		return fileDescriptor;
+	}
+	
+	/**
+	 * Handle the open() system call.
+	 */
+	private int handleOpen(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Find an available slot in the file table
+		int fileDescriptor = -1;
+		for (int i = 0; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fileDescriptor = i;
+				break;
+			}
+		}
+		
+		// If no slot is available, return error
+		if (fileDescriptor == -1) {
+			return -1;
+		}
+		
+		// Open the file (without creating)
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+		if (file == null) {
+			return -1;
+		}
+		
+		// Store the file in the file table
+		myFileSlots[fileDescriptor] = file;
+		return fileDescriptor;
+	}
+	
+	/**
+	 * Handle the read() system call.
+	 */
+	private int handleRead(int fileDescriptor, int bufferVAddr, int count) {
+		// Validate file descriptor
+		if (fileDescriptor < 0 || fileDescriptor >= myFileSlots.length || 
+			myFileSlots[fileDescriptor] == null) {
+			return -1;
+		}
+		
+		// Validate count
+		if (count < 0) {
+			return -1;
+		}
+		
+		// Validate buffer address
+		if (bufferVAddr < 0) {
+			return -1;
+		}
+		
+		// Create a buffer to read into (one page at a time)
+		byte[] buffer = new byte[pageSize];
+		int totalBytesRead = 0;
+		
+		// Read data in chunks no larger than a page
+		while (count > 0) {
+			int bytesToRead = Math.min(count, pageSize);
+			
+			// Read from file
+			int bytesRead = myFileSlots[fileDescriptor].read(buffer, 0, bytesToRead);
+			if (bytesRead <= 0) {
+				break; // EOF or error
+			}
+			
+			// Write to user memory
+			int bytesWritten = writeVirtualMemory(bufferVAddr, buffer, 0, bytesRead);
+			if (bytesWritten < bytesRead) {
+				break; // Memory error
+			}
+			
+			// Update counters and pointers
+			bufferVAddr += bytesRead;
+			count -= bytesRead;
+			totalBytesRead += bytesRead;
+		}
+		
+		return totalBytesRead;
+	}
+	
+	/**
+	 * Handle the write() system call.
+	 */
+	private int handleWrite(int fileDescriptor, int bufferVAddr, int count) {
+		// Validate file descriptor
+		if (fileDescriptor < 0 || fileDescriptor >= myFileSlots.length || 
+			myFileSlots[fileDescriptor] == null) {
+			return -1;
+		}
+		
+		// Validate count
+		if (count < 0) {
+			return -1;
+		}
+		
+		// Validate buffer address
+		if (bufferVAddr < 0) {
+			return -1;
+		}
+		
+		// Create a buffer to read from user memory (one page at a time)
+		byte[] buffer = new byte[pageSize];
+		int totalBytesWritten = 0;
+		
+		// Write data in chunks no larger than a page
+		while (count > 0) {
+			int bytesToWrite = Math.min(count, pageSize);
+			
+			// Read from user memory
+			int bytesRead = readVirtualMemory(bufferVAddr, buffer, 0, bytesToWrite);
+			if (bytesRead <= 0) {
+				break; // Memory error
+			}
+			
+			// Write to file
+			int bytesWritten = myFileSlots[fileDescriptor].write(buffer, 0, bytesRead);
+			if (bytesWritten < bytesRead) {
+				break; // File error
+			}
+			
+			// Update counters and pointers
+			bufferVAddr += bytesWritten;
+			count -= bytesWritten;
+			totalBytesWritten += bytesWritten;
+		}
+		
+		return totalBytesWritten;
+	}
+	
+	/**
+	 * Handle the close() system call.
+	 */
+	private int handleClose(int fileDescriptor) {
+		// Validate file descriptor
+		if (fileDescriptor < 0 || fileDescriptor >= myFileSlots.length || 
+			myFileSlots[fileDescriptor] == null) {
+			return -1;
+		}
+		
+		// Close the file
+		myFileSlots[fileDescriptor].close();
+		myFileSlots[fileDescriptor] = null;
+		return 0;
+	}
+	
+	/**
+	 * Handle the unlink() system call.
+	 */
+	private int handleUnlink(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Remove the file from the file system
+		boolean success = ThreadedKernel.fileSystem.remove(filename);
+		if (success) {
+			return 0;
+		} else {
+			return -1;
+		}
+	}
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
@@ -446,7 +657,18 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
-
+		case syscallCreate:
+			return handleCreate(a0);
+		case syscallOpen:
+			return handleOpen(a0);
+		case syscallRead:
+			return handleRead(a0, a1, a2);
+		case syscallWrite:
+			return handleWrite(a0, a1, a2);
+		case syscallClose:
+			return handleClose(a0);
+		case syscallUnlink:
+			return handleUnlink(a0);
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
 			Lib.assertNotReached("Unknown system call!");
@@ -500,6 +722,9 @@ public class UserProcess {
 	private int initialPC, initialSP;
 
 	private int argc, argv;
+	
+	/** Array to store open files (maximum 16 files per process) */
+	protected OpenFile[] myFileSlots;
 
 	private static final int pageSize = Processor.pageSize;
 
