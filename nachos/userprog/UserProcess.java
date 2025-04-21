@@ -585,6 +585,43 @@ public class UserProcess {
 		}
 	}
 
+	// Test Case for handleUnlink
+	public void testHandleUnlink() {
+	    String filename = "testfile.txt";
+	    int addr = filename.hashCode(); // Use a hash as a virtual memory address for simulation
+	
+	    // Test Case 1: File does not exist
+	    System.out.println("Testing unlink on non-existent file...");
+	    int result = handleUnlink(addr);
+	    if (result == -1) {
+	        System.out.println("...passed (file not found, return -1 as expected).");
+	    } else {
+	        System.out.println("...failed (expected -1, but got " + result + ")");
+	    }
+	
+	    // Test Case 2: Create file and then unlink it
+	    System.out.println("Testing unlink after file creation...");
+	    // Simulate file creation (use handleCreate if it's implemented)
+	    handleCreate(addr); // This method should create the file for testing
+	
+	    // Now attempt to unlink it
+	    result = handleUnlink(addr);
+	    if (result == 0) {
+	        System.out.println("...passed (file unlinked successfully).");
+	    } else {
+	        System.out.println("...failed (expected 0, but got " + result + ")");
+	    }
+	
+	    // Test Case 3: Try to unlink the file again (should fail)
+	    System.out.println("Testing unlink after file has been unlinked...");
+	    result = handleUnlink(addr);
+	    if (result == -1) {
+	        System.out.println("...passed (file not found after unlink, return -1 as expected).");
+	    } else {
+	        System.out.println("...failed (expected -1, but got " + result + ")");
+	    }
+	}
+	
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
