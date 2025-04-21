@@ -13,7 +13,7 @@
  * Date: [Insert Date]
  */
 #include "../test/syscall.h"
-#include <stdio.h>  
+#include "../test/stdio.h"  
 #include <stdlib.h>
 
 
