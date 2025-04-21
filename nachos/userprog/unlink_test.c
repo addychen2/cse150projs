@@ -12,7 +12,7 @@
  * Geoff Voelker
  * Date: [Insert Date]
  */
-#include "syscall.h"
+#include "../test/syscall.h"
 #include "stdio.h"
 #include <stdlib.h>
 
