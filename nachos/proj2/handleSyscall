@@ -24,6 +24,7 @@ public void handleException(int problem) {
             processor.advancePC();
             break;
 
+            
         default:
             Lib.debug(dbgProcess, "Unexpected exception: " + Processor.exceptionNames[problem]);
             handleExit(-1);
