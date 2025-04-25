@@ -330,6 +330,11 @@ public class UserProcess {
      * Release any resources allocated by <tt>loadSections()</tt>.
      */
     protected void unloadSections() {
+        // Close the COFF file if it's open
+        if (coff != null) {
+            coff.close();
+            coff = null;
+        }
     }
 
     /**
@@ -384,6 +389,9 @@ public class UserProcess {
             }
         }
         
+        // Release other resources
+        unloadSections();
+        
         // for now, unconditionally terminate with just one process
         Kernel.kernel.terminate();
 
@@ -394,15 +402,29 @@ public class UserProcess {
      * Handle the create() system call.
      */
     private int handleCreate(int filenameAddr) {
+        // Validation step: Check filename address
+        if (filenameAddr < 0) {
+            Lib.debug(dbgProcess, "handleCreate: negative filename address " + filenameAddr);
+            return -1; // Invalid filename address
+        }
+        
         // Read the filename from user memory
         String filename = readVirtualMemoryString(filenameAddr, 256);
         if (filename == null) {
+            Lib.debug(dbgProcess, "handleCreate: could not read filename from memory");
             return -1; // Invalid filename address
+        }
+        
+        // Validation step: Check filename length
+        if (filename.length() == 0) {
+            Lib.debug(dbgProcess, "handleCreate: empty filename");
+            return -1; // Empty filename
         }
         
         // Create the file
         OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
         if (file == null) {
+            Lib.debug(dbgProcess, "handleCreate: could not create file " + filename);
             return -1; // Failed to create file
         }
         
@@ -415,6 +437,7 @@ public class UserProcess {
         }
         
         // No available file descriptor
+        Lib.debug(dbgProcess, "handleCreate: no available file descriptor for " + filename);
         file.close();
         return -1;
     }
@@ -423,15 +446,29 @@ public class UserProcess {
      * Handle the open() system call.
      */
     private int handleOpen(int filenameAddr) {
+        // Validation step: Check filename address
+        if (filenameAddr < 0) {
+            Lib.debug(dbgProcess, "handleOpen: negative filename address " + filenameAddr);
+            return -1; // Invalid filename address
+        }
+        
         // Read the filename from user memory
         String filename = readVirtualMemoryString(filenameAddr, 256);
         if (filename == null) {
+            Lib.debug(dbgProcess, "handleOpen: could not read filename from memory");
             return -1; // Invalid filename address
+        }
+        
+        // Validation step: Check filename length
+        if (filename.length() == 0) {
+            Lib.debug(dbgProcess, "handleOpen: empty filename");
+            return -1; // Empty filename
         }
         
         // Open the file (false means don't create if it doesn't exist)
         OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
         if (file == null) {
+            Lib.debug(dbgProcess, "handleOpen: could not open file " + filename);
             return -1; // Failed to open file
         }
         
@@ -444,17 +481,161 @@ public class UserProcess {
         }
         
         // No available file descriptor
+        Lib.debug(dbgProcess, "handleOpen: no available file descriptor for " + filename);
         file.close();
         return -1;
+    }
+
+    /**
+     * Handle the read() system call.
+     */
+    private int handleRead(int fileDescriptor, int bufferAddr, int count) {
+        // Validation step: Check if fileDescriptor is within valid range
+        if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleRead: invalid file descriptor " + fileDescriptor);
+            return -1; // Invalid file descriptor
+        }
+        
+        // Validation step: Check if the file is actually open
+        if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleRead: file descriptor " + fileDescriptor + " not in use");
+            return -1; // File descriptor not in use
+        }
+        
+        // Validation step: Check count parameter
+        if (count < 0) {
+            Lib.debug(dbgProcess, "handleRead: negative count " + count);
+            return -1; // Invalid count
+        }
+        
+        // Validation step: Check buffer address
+        if (bufferAddr < 0) {
+            Lib.debug(dbgProcess, "handleRead: negative buffer address " + bufferAddr);
+            return -1; // Invalid buffer address
+        }
+        
+        // Get the file
+        OpenFile file = fileTable[fileDescriptor];
+        
+        // Use page-sized buffer for large reads as required by the project spec
+        byte[] buffer = new byte[Math.min(count, pageSize)];
+        int totalBytesRead = 0;
+        
+        while (totalBytesRead < count) {
+            int bytesToRead = Math.min(buffer.length, count - totalBytesRead);
+            int bytesRead = file.read(buffer, 0, bytesToRead);
+            
+            if (bytesRead < 0) {
+                // Error occurred during read
+                Lib.debug(dbgProcess, "handleRead: error reading from file");
+                return -1;
+            }
+            
+            if (bytesRead == 0) {
+                // End of file reached
+                break;
+            }
+            
+            // Write the data to user memory
+            int bytesWritten = writeVirtualMemory(bufferAddr + totalBytesRead, buffer, 0, bytesRead);
+            if (bytesWritten < bytesRead) {
+                // Could not write all bytes to user memory
+                Lib.debug(dbgProcess, "handleRead: could not write all bytes to user memory");
+                return -1;
+            }
+            
+            totalBytesRead += bytesRead;
+        }
+        
+        return totalBytesRead;
+    }
+
+    /**
+     * Handle the write() system call.
+     */
+    private int handleWrite(int fileDescriptor, int bufferAddr, int count) {
+        // Validation step: Check if fileDescriptor is within valid range
+        if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleWrite: invalid file descriptor " + fileDescriptor);
+            return -1; // Invalid file descriptor
+        }
+        
+        // Validation step: Check if the file is actually open
+        if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleWrite: file descriptor " + fileDescriptor + " not in use");
+            return -1; // File descriptor not in use
+        }
+        
+        // Validation step: Check count parameter
+        if (count < 0) {
+            Lib.debug(dbgProcess, "handleWrite: negative count " + count);
+            return -1; // Invalid count
+        }
+        
+        // Validation step: Check buffer address
+        if (bufferAddr < 0) {
+            Lib.debug(dbgProcess, "handleWrite: negative buffer address " + bufferAddr);
+            return -1; // Invalid buffer address
+        }
+        
+        // Special case: If count is 0, return 0 immediately (nothing to write)
+        if (count == 0) {
+            return 0;
+        }
+        
+        // Get the file
+        OpenFile file = fileTable[fileDescriptor];
+        
+        // Use page-sized buffer for large writes as required by the project spec
+        byte[] buffer = new byte[Math.min(count, pageSize)];
+        int totalBytesWritten = 0;
+        
+        while (totalBytesWritten < count) {
+            int bytesToWrite = Math.min(buffer.length, count - totalBytesWritten);
+            
+            // Read data from user memory
+            int bytesRead = readVirtualMemory(bufferAddr + totalBytesWritten, buffer, 0, bytesToWrite);
+            if (bytesRead < bytesToWrite) {
+                // Could not read all bytes from user memory
+                Lib.debug(dbgProcess, "handleWrite: could not read all bytes from user memory");
+                return -1;
+            }
+            
+            // Write the data to the file
+            int bytesWritten = file.write(buffer, 0, bytesRead);
+            if (bytesWritten < 0) {
+                // Error occurred during write
+                Lib.debug(dbgProcess, "handleWrite: error writing to file");
+                return -1;
+            }
+            
+            if (bytesWritten < bytesRead) {
+                // Could not write all bytes to file
+                // Partial writes are considered an error in many system implementations
+                Lib.debug(dbgProcess, "handleWrite: could not write all bytes to file");
+                return -1;
+            }
+            
+            totalBytesWritten += bytesWritten;
+        }
+        
+        return totalBytesWritten;
     }
 
     /**
      * Handle the close() system call.
      */
     private int handleClose(int fileDescriptor) {
-        // Validate file descriptor
-        if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES || fileTable[fileDescriptor] == null) {
-            return -1; // Invalid file descriptor
+        // Validation step: Check if the fileDescriptor is within valid range
+        if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleClose: invalid file descriptor " + fileDescriptor);
+            return -1; // Invalid file descriptor range
+        }
+        
+        // Validation step: Check if the file is actually open
+        if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleClose: file descriptor " + fileDescriptor + " not in use");
+            return -1; // File descriptor not in use
         }
         
         // Close the file
@@ -462,6 +643,52 @@ public class UserProcess {
         fileTable[fileDescriptor] = null;
         
         return 0; // Success
+    }
+
+    /**
+     * Handle the unlink() system call.
+     */
+    private int handleUnlink(int filenameAddr) {
+        // Validation step: Check filename address
+        if (filenameAddr < 0) {
+            Lib.debug(dbgProcess, "handleUnlink: negative filename address " + filenameAddr);
+            return -1; // Invalid filename address
+        }
+        
+        // Read the filename from user memory
+        String filename = readVirtualMemoryString(filenameAddr, 256);
+        if (filename == null) {
+            Lib.debug(dbgProcess, "handleUnlink: could not read filename from memory");
+            return -1; // Invalid filename address
+        }
+        
+        // Validation step: Check filename length
+        if (filename.length() == 0) {
+            Lib.debug(dbgProcess, "handleUnlink: empty filename");
+            return -1; // Empty filename
+        }
+        
+        // Remove the file - Stub implementation for now
+        Lib.debug(dbgProcess, "handleUnlink not fully implemented yet");
+        return -1;
+    }
+
+    /**
+     * Handle the exec() system call.
+     */
+    private int handleExec(int fileAddr, int argc, int argvAddr) {
+        // Stub implementation for now
+        Lib.debug(dbgProcess, "handleExec not implemented yet");
+        return -1;
+    }
+
+    /**
+     * Handle the join() system call.
+     */
+    private int handleJoin(int processID, int statusAddr) {
+        // Stub implementation for now
+        Lib.debug(dbgProcess, "handleJoin not implemented yet");
+        return -1;
     }
 
     private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
@@ -540,19 +767,19 @@ public class UserProcess {
             return handleCreate(a0);
         case syscallOpen:
             return handleOpen(a0);
-        case syscallClose:
-            return handleClose(a0);
-        // These are stubs for now - you'll implement these in the next part
-        case syscallExec:
-            return handleExec(a0, a1, a2);
-        case syscallJoin:
-            return handleJoin(a0, a1);
         case syscallRead:
             return handleRead(a0, a1, a2);
         case syscallWrite:
             return handleWrite(a0, a1, a2);
+        case syscallClose:
+            return handleClose(a0);
         case syscallUnlink:
             return handleUnlink(a0);
+        case syscallExec:
+            return handleExec(a0, a1, a2);
+        case syscallJoin:
+            return handleJoin(a0, a1);
+
         default:
             Lib.debug(dbgProcess, "Unknown syscall " + syscall);
             Lib.assertNotReached("Unknown system call!");
@@ -586,36 +813,6 @@ public class UserProcess {
                     + Processor.exceptionNames[cause]);
             Lib.assertNotReached("Unexpected exception");
         }
-    }
-
-    // Stub for exec syscall - will be implemented later
-    private int handleExec(int fileAddr, int argc, int argvAddr) {
-        Lib.debug(dbgProcess, "handleExec not implemented yet");
-        return -1;
-    }
-
-    // Stub for join syscall - will be implemented later
-    private int handleJoin(int processID, int statusAddr) {
-        Lib.debug(dbgProcess, "handleJoin not implemented yet");
-        return -1;
-    }
-
-    // Stub for read syscall - will be implemented later
-    private int handleRead(int fd, int bufferAddr, int size) {
-        Lib.debug(dbgProcess, "handleRead not implemented yet");
-        return -1;
-    }
-
-    // Stub for write syscall - will be implemented later
-    private int handleWrite(int fd, int bufferAddr, int size) {
-        Lib.debug(dbgProcess, "handleWrite not implemented yet");
-        return -1;
-    }
-
-    // Stub for unlink syscall - will be implemented later
-    private int handleUnlink(int filenameAddr) {
-        Lib.debug(dbgProcess, "handleUnlink not implemented yet");
-        return -1;
     }
 
     /** The program being run by this process. */
