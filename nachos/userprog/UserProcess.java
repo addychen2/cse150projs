@@ -454,13 +454,18 @@ public class UserProcess {
 		return 0;
 	}
 
+
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
 	 * . The <i>cause</i> argument identifies which exception occurred; see the
 	 * <tt>Processor.exceptionZZZ</tt> constants.
 	 * 
 	 * @param cause the user exception that occurred.
+	 * 
+	 * 
+	 * 
 	 */
+	
 	public void handleException(int cause) {
 		Processor processor = Machine.processor();
 
@@ -482,6 +487,82 @@ public class UserProcess {
 		}
 	}
 
+	public int handleExtendedSyscall(int syscall, int a0, int a1, int a2, int a3) {
+		switch (syscall) {
+			case syscallExec:
+				return handleExec(a0, a1, a2);
+			case syscallJoin:
+				return handleJoin(a0, a1);
+			case syscallCreate:
+				return handleCreate(a0);
+			case syscallOpen:
+				return handleOpen(a0);
+			case syscallRead:
+				return handleRead(a0, a1, a2);
+			case syscallWrite:
+				return handleWrite(a0, a1, a2);
+			case syscallClose:
+				return handleClose(a0);
+			case syscallUnlink:
+				return handleUnlink(a0);
+			default:
+				Lib.debug(dbgProcess, "Unknown extended syscall " + syscall);
+				Lib.assertNotReached("Unknown system call!");
+		}
+		return 0;
+	}
+	
+// Stub for exec syscall
+private int handleExec(int fileAddr, int argc, int argvAddr) {
+    Lib.debug(dbgProcess, "handleExec not implemented yet");
+    return -1;
+}
+
+// Stub for join syscall
+private int handleJoin(int processID, int statusAddr) {
+    Lib.debug(dbgProcess, "handleJoin not implemented yet");
+    return -1;
+}
+
+// Stub for create syscall
+private int handleCreate(int filenameAddr) {
+    Lib.debug(dbgProcess, "handleCreate not implemented yet");
+    return -1;
+}
+
+// Stub for open syscall
+private int handleOpen(int filenameAddr) {
+    Lib.debug(dbgProcess, "handleOpen not implemented yet");
+    return -1;
+}
+
+// Stub for read syscall
+private int handleRead(int fd, int bufferAddr, int size) {
+    Lib.debug(dbgProcess, "handleRead not implemented yet");
+    return -1;
+}
+
+// Stub for write syscall
+private int handleWrite(int fd, int bufferAddr, int size) {
+    Lib.debug(dbgProcess, "handleWrite not implemented yet");
+    return -1;
+}
+
+// Stub for close syscall
+private int handleClose(int fd) {
+    Lib.debug(dbgProcess, "handleClose not implemented yet");
+    return -1;
+}
+
+// Stub for unlink syscall
+private int handleUnlink(int filenameAddr) {
+    Lib.debug(dbgProcess, "handleUnlink not implemented yet");
+    return -1;
+}
+
+
+
+	
 	/** The program being run by this process. */
 	protected Coff coff;
 
