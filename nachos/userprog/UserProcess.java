@@ -645,33 +645,24 @@ public class UserProcess {
         return 0; // Success
     }
 
-    /**
-     * Handle the unlink() system call.
-     */
-    private int handleUnlink(int filenameAddr) {
-        // Validation step: Check filename address
-        if (filenameAddr < 0) {
-            Lib.debug(dbgProcess, "handleUnlink: negative filename address " + filenameAddr);
-            return -1; // Invalid filename address
-        }
-        
-        // Read the filename from user memory
-        String filename = readVirtualMemoryString(filenameAddr, 256);
-        if (filename == null) {
-            Lib.debug(dbgProcess, "handleUnlink: could not read filename from memory");
-            return -1; // Invalid filename address
-        }
-        
-        // Validation step: Check filename length
-        if (filename.length() == 0) {
-            Lib.debug(dbgProcess, "handleUnlink: empty filename");
-            return -1; // Empty filename
-        }
-        
-        // Remove the file - Stub implementation for now
-        Lib.debug(dbgProcess, "handleUnlink not fully implemented yet");
-        return -1;
-    }
+	/**
+	 * Handle the unlink() system call.
+	 */
+	private int handleUnlink(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Remove the file from the file system
+		boolean success = ThreadedKernel.fileSystem.remove(filename);
+		if (success) {
+			return 0;
+		} else {
+			return -1;
+		}
+	}
 
     /**
      * Handle the exec() system call.
