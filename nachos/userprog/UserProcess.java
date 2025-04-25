@@ -649,10 +649,23 @@ public class UserProcess {
 	 * Handle the unlink() system call.
 	 */
 	private int handleUnlink(int fileNameVAddr) {
+		// Validation step: Check filename address
+		if (fileNameVAddr < 0) {
+			Lib.debug(dbgProcess, "handleUnlink: negative filename address " + fileNameVAddr);
+			return -1; // Invalid filename address
+		}
+		
 		// Read the filename from user memory
 		String filename = readVirtualMemoryString(fileNameVAddr, 256);
 		if (filename == null) {
-			return -1;
+			Lib.debug(dbgProcess, "handleUnlink: could not read filename from memory");
+			return -1; // Invalid filename address
+		}
+		
+		// Validation step: Check filename length
+		if (filename.length() == 0) {
+			Lib.debug(dbgProcess, "handleUnlink: empty filename");
+			return -1; // Empty filename
 		}
 		
 		// Remove the file from the file system
