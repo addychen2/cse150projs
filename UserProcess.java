@@ -20,6 +20,9 @@ import java.io.EOFException;
  * @see nachos.network.NetProcess
  */
 public class UserProcess {
+	/** File descriptor table for this process */
+	protected OpenFile[] myFileSlots;
+
 	/**
 	 * Allocate a new process.
 	 */
@@ -28,6 +31,13 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// File descriptor 0 refers to keyboard input (stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
 	}
 
 	/**
@@ -374,6 +384,44 @@ public class UserProcess {
 		return 0;
 	}
 
+	/**
+     * Handle the open() system call. (Cristian)
+     */
+    private int handleOpen(int fileNameAddr) {
+        String filename = readVirtualMemoryString(fileNameAddr, 256);
+        if (filename == null) {
+            return -1;
+        }
+        int fd = -1;
+        for (int i = 0; i < myFileSlots.length; i++) {
+            if (myFileSlots[i] == null) {
+                fd = i;
+                break;
+            }
+        }
+        if (fd == -1) {
+            return -1;
+        }
+        OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+        if (file == null) {
+            return -1;
+        }
+        myFileSlots[fd] = file;
+        return fd;
+    }
+
+    /**
+     * Handle the close() system call. (Cristian)
+     */
+    private int handleClose(int fd) {
+        if (fd < 0 || fd >= myFileSlots.length || myFileSlots[fd] == null) {
+            return -1;
+        }
+        myFileSlots[fd].close();
+        myFileSlots[fd] = null;
+        return 0;
+    }
+
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
 			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
@@ -441,18 +489,21 @@ public class UserProcess {
 	 * @return the value to be returned to the user.
 	 */
 	public int handleSyscall(int syscall, int a0, int a1, int a2, int a3) {
-		switch (syscall) {
-		case syscallHalt:
-			return handleHalt();
-		case syscallExit:
-			return handleExit(a0);
-
-		default:
-			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
-			Lib.assertNotReached("Unknown system call!");
-		}
-		return 0;
-	}
+        switch (syscall) {
+        case syscallHalt:
+            return handleHalt();
+        case syscallExit:
+            return handleExit(a0);
+        case syscallOpen:
+            return handleOpen(a0);
+        case syscallClose:
+            return handleClose(a0);
+        default:
+            Lib.debug(dbgProcess, "Unknown syscall " + syscall);
+            Lib.assertNotReached("Unknown system call!");
+        }
+        return 0;
+    }
 
 	/**
 	 * Handle a user exception. Called by <tt>UserKernel.exceptionHandler()</tt>
