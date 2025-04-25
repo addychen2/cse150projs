@@ -410,17 +410,7 @@ public class UserProcess {
         return fd;
     }
 
-    /**
-     * Handle the close() system call. (Cristian)
-     */
-    private int handleClose(int fd) {
-        if (fd < 0 || fd >= myFileSlots.length || myFileSlots[fd] == null) {
-            return -1;
-        }
-        myFileSlots[fd].close();
-        myFileSlots[fd] = null;
-        return 0;
-    }
+    
 
 	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
 			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
@@ -502,6 +492,71 @@ public class UserProcess {
             Lib.debug(dbgProcess, "Unknown syscall " + syscall);
             Lib.assertNotReached("Unknown system call!");
         }
+        return 0;
+    }
+
+	private int handleCreate(int nameVaddr) {
+		// Read filename from virtual memory
+		String filename = readVirtualMemoryString(nameVaddr, 256);
+		if (filename == null)
+			return -1;
+
+		// Find empty slot in file table
+		int fd = -1;
+		for (int i = 2; i < myFileSlots.length; i++) {
+			if (myFileSlots[i] == null) {
+				fd = i;
+				break;
+			}
+		}
+		if (fd == -1)
+			return -1;
+
+		// Create and open the file
+		OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
+		if (file == null)
+			return -1;
+
+			myFileSlots[fd] = file;
+		return fd;
+	}
+
+	// private int handleOpen(int nameVaddr) {
+	// 	// Read filename from virtual memory
+	// 	String filename = readVirtualMemoryString(nameVaddr, 256);
+	// 	if (filename == null) {
+	// 		return -1;
+	// 	}
+
+	// 	// Find empty slot in file table
+	// 	int fd = -1;
+	// 	for (int i = 2; i < MAXFILES; i++) {
+	// 		if (fileTable[i] == null) {
+	// 			fd = i;
+	// 			break;
+	// 		}
+	// 	}
+	// 	if (fd == -1)
+	// 		return -1;
+
+	// 	// Open the file
+	// 	OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
+	// 	if (file == null)
+	// 		return -1;
+
+	// 	fileTable[fd] = file;
+	// 	return fd;
+	// }
+
+	/**
+     * Handle the close() system call. (Cristian)
+     */
+    private int handleClose(int fd) {
+        if (fd < 0 || fd >= myFileSlots.length || myFileSlots[fd] == null) {
+            return -1;
+        }
+        myFileSlots[fd].close();
+        myFileSlots[fd] = null;
         return 0;
     }
 
