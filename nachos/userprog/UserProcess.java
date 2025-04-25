@@ -6,10 +6,6 @@ import nachos.userprog.*;
 import nachos.vm.*;
 
 import java.io.EOFException;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
-import java.util.Map;
 
 /**
  * Encapsulates the state of a user process that is not contained in its user
@@ -24,28 +20,10 @@ import java.util.Map;
  * @see nachos.network.NetProcess
  */
 public class UserProcess {
-    // Process ID tracking
-    private static int nextProcessID = 0;
-    private static Lock processIDLock = new Lock();
-    protected int processID;
-    
-    // Parent-child process relationships
-    private UserProcess parent;
-    private List<UserProcess> children;
-    private Map<Integer, Integer> childExitStatus;
-    private boolean exited = false;
-    private int exitStatus = 0;
-    private Lock statusLock;
-    
     /**
      * Allocate a new process.
      */
     public UserProcess() {
-        // Assign a unique process ID
-        processIDLock.acquire();
-        processID = nextProcessID++;
-        processIDLock.release();
-        
         int numPhysPages = Machine.processor().getNumPhysPages();
         pageTable = new TranslationEntry[numPhysPages];
         for (int i = 0; i < numPhysPages; i++)
@@ -58,16 +36,6 @@ public class UserProcess {
         fileTable[0] = UserKernel.console.openForReading();
         // File descriptor 1 refers to display output (UNIX stdout)
         fileTable[1] = UserKernel.console.openForWriting();
-        
-        // Initialize child tracking
-        children = new LinkedList<UserProcess>();
-        childExitStatus = new HashMap<Integer, Integer>();
-        statusLock = new Lock();
-        
-        // Increment the total process count
-        UserKernel.numProcessesLock.acquire();
-        UserKernel.numProcesses++;
-        UserKernel.numProcessesLock.release();
     }
 
     /**
@@ -396,10 +364,6 @@ public class UserProcess {
      * Handle the halt() system call.
      */
     private int handleHalt() {
-        // Only the root process (processID 0) can halt the machine
-        if (processID != 0)
-            return -1;
-            
         Machine.halt();
 
         Lib.assertNotReached("Machine.halt() did not halt machine!");
@@ -410,12 +374,13 @@ public class UserProcess {
      * Handle the exit() system call.
      */
     private int handleExit(int status) {
-        // Store exit status for parent to retrieve
-        statusLock.acquire();
-        exited = true;
-        exitStatus = status;
-        statusLock.release();
+        // Do not remove this call to the autoGrader...
+        Machine.autoGrader().finishingCurrentProcess(status);
+        // ...and leave it as the top of handleExit so that we
+        // can grade your implementation.
 
+        Lib.debug(dbgProcess, "UserProcess.handleExit (" + status + ")");
+        
         // Close all open files
         for (int i = 0; i < MAX_FILES; i++) {
             if (fileTable[i] != null) {
@@ -427,20 +392,9 @@ public class UserProcess {
         // Release other resources
         unloadSections();
         
-        // Update process count
-        UserKernel.numProcessesLock.acquire();
-        UserKernel.numProcesses--;
-        boolean isLastProcess = (UserKernel.numProcesses == 0);
-        UserKernel.numProcessesLock.release();
-        
-        // If this is the last process, terminate the kernel
-        if (isLastProcess) {
-            Kernel.kernel.terminate();
-        }
-        
-        // Terminate this thread
-        KThread.finish();
-        
+        // for now, unconditionally terminate with just one process
+        Kernel.kernel.terminate();
+
         return 0;
     }
 
@@ -450,23 +404,27 @@ public class UserProcess {
     private int handleCreate(int filenameAddr) {
         // Validation step: Check filename address
         if (filenameAddr < 0) {
+            Lib.debug(dbgProcess, "handleCreate: negative filename address " + filenameAddr);
             return -1; // Invalid filename address
         }
         
         // Read the filename from user memory
         String filename = readVirtualMemoryString(filenameAddr, 256);
         if (filename == null) {
+            Lib.debug(dbgProcess, "handleCreate: could not read filename from memory");
             return -1; // Invalid filename address
         }
         
         // Validation step: Check filename length
         if (filename.length() == 0) {
+            Lib.debug(dbgProcess, "handleCreate: empty filename");
             return -1; // Empty filename
         }
         
         // Create the file
         OpenFile file = ThreadedKernel.fileSystem.open(filename, true);
         if (file == null) {
+            Lib.debug(dbgProcess, "handleCreate: could not create file " + filename);
             return -1; // Failed to create file
         }
         
@@ -479,6 +437,7 @@ public class UserProcess {
         }
         
         // No available file descriptor
+        Lib.debug(dbgProcess, "handleCreate: no available file descriptor for " + filename);
         file.close();
         return -1;
     }
@@ -489,23 +448,27 @@ public class UserProcess {
     private int handleOpen(int filenameAddr) {
         // Validation step: Check filename address
         if (filenameAddr < 0) {
+            Lib.debug(dbgProcess, "handleOpen: negative filename address " + filenameAddr);
             return -1; // Invalid filename address
         }
         
         // Read the filename from user memory
         String filename = readVirtualMemoryString(filenameAddr, 256);
         if (filename == null) {
+            Lib.debug(dbgProcess, "handleOpen: could not read filename from memory");
             return -1; // Invalid filename address
         }
         
         // Validation step: Check filename length
         if (filename.length() == 0) {
+            Lib.debug(dbgProcess, "handleOpen: empty filename");
             return -1; // Empty filename
         }
         
         // Open the file (false means don't create if it doesn't exist)
         OpenFile file = ThreadedKernel.fileSystem.open(filename, false);
         if (file == null) {
+            Lib.debug(dbgProcess, "handleOpen: could not open file " + filename);
             return -1; // Failed to open file
         }
         
@@ -518,6 +481,7 @@ public class UserProcess {
         }
         
         // No available file descriptor
+        Lib.debug(dbgProcess, "handleOpen: no available file descriptor for " + filename);
         file.close();
         return -1;
     }
@@ -528,21 +492,25 @@ public class UserProcess {
     private int handleRead(int fileDescriptor, int bufferAddr, int count) {
         // Validation step: Check if fileDescriptor is within valid range
         if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleRead: invalid file descriptor " + fileDescriptor);
             return -1; // Invalid file descriptor
         }
         
         // Validation step: Check if the file is actually open
         if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleRead: file descriptor " + fileDescriptor + " not in use");
             return -1; // File descriptor not in use
         }
         
         // Validation step: Check count parameter
         if (count < 0) {
+            Lib.debug(dbgProcess, "handleRead: negative count " + count);
             return -1; // Invalid count
         }
         
         // Validation step: Check buffer address
         if (bufferAddr < 0) {
+            Lib.debug(dbgProcess, "handleRead: negative buffer address " + bufferAddr);
             return -1; // Invalid buffer address
         }
         
@@ -559,6 +527,7 @@ public class UserProcess {
             
             if (bytesRead < 0) {
                 // Error occurred during read
+                Lib.debug(dbgProcess, "handleRead: error reading from file");
                 return -1;
             }
             
@@ -571,6 +540,7 @@ public class UserProcess {
             int bytesWritten = writeVirtualMemory(bufferAddr + totalBytesRead, buffer, 0, bytesRead);
             if (bytesWritten < bytesRead) {
                 // Could not write all bytes to user memory
+                Lib.debug(dbgProcess, "handleRead: could not write all bytes to user memory");
                 return -1;
             }
             
@@ -586,21 +556,25 @@ public class UserProcess {
     private int handleWrite(int fileDescriptor, int bufferAddr, int count) {
         // Validation step: Check if fileDescriptor is within valid range
         if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleWrite: invalid file descriptor " + fileDescriptor);
             return -1; // Invalid file descriptor
         }
         
         // Validation step: Check if the file is actually open
         if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleWrite: file descriptor " + fileDescriptor + " not in use");
             return -1; // File descriptor not in use
         }
         
         // Validation step: Check count parameter
         if (count < 0) {
+            Lib.debug(dbgProcess, "handleWrite: negative count " + count);
             return -1; // Invalid count
         }
         
         // Validation step: Check buffer address
         if (bufferAddr < 0) {
+            Lib.debug(dbgProcess, "handleWrite: negative buffer address " + bufferAddr);
             return -1; // Invalid buffer address
         }
         
@@ -623,6 +597,7 @@ public class UserProcess {
             int bytesRead = readVirtualMemory(bufferAddr + totalBytesWritten, buffer, 0, bytesToWrite);
             if (bytesRead < bytesToWrite) {
                 // Could not read all bytes from user memory
+                Lib.debug(dbgProcess, "handleWrite: could not read all bytes from user memory");
                 return -1;
             }
             
@@ -630,12 +605,14 @@ public class UserProcess {
             int bytesWritten = file.write(buffer, 0, bytesRead);
             if (bytesWritten < 0) {
                 // Error occurred during write
+                Lib.debug(dbgProcess, "handleWrite: error writing to file");
                 return -1;
             }
             
             if (bytesWritten < bytesRead) {
                 // Could not write all bytes to file
                 // Partial writes are considered an error in many system implementations
+                Lib.debug(dbgProcess, "handleWrite: could not write all bytes to file");
                 return -1;
             }
             
@@ -651,11 +628,13 @@ public class UserProcess {
     private int handleClose(int fileDescriptor) {
         // Validation step: Check if the fileDescriptor is within valid range
         if (fileDescriptor < 0 || fileDescriptor >= MAX_FILES) {
+            Lib.debug(dbgProcess, "handleClose: invalid file descriptor " + fileDescriptor);
             return -1; // Invalid file descriptor range
         }
         
         // Validation step: Check if the file is actually open
         if (fileTable[fileDescriptor] == null) {
+            Lib.debug(dbgProcess, "handleClose: file descriptor " + fileDescriptor + " not in use");
             return -1; // File descriptor not in use
         }
         
@@ -666,148 +645,54 @@ public class UserProcess {
         return 0; // Success
     }
 
-    /**
-     * Handle the unlink() system call.
-     */
-    private int handleUnlink(int fileNameVAddr) {
-        // Validation step: Check filename address
-        if (fileNameVAddr < 0) {
-            return -1; // Invalid filename address
-        }
-        
-        // Read the filename from user memory
-        String filename = readVirtualMemoryString(fileNameVAddr, 256);
-        if (filename == null) {
-            return -1; // Invalid filename address
-        }
-        
-        // Validation step: Check filename length
-        if (filename.length() == 0) {
-            return -1; // Empty filename
-        }
-        
-        // Remove the file from the file system
-        boolean success = ThreadedKernel.fileSystem.remove(filename);
-        if (success) {
-            return 0;
-        } else {
-            return -1;
-        }
-    }
+	/**
+	 * Handle the unlink() system call.
+	 */
+	private int handleUnlink(int fileNameVAddr) {
+		// Validation step: Check filename address
+		if (fileNameVAddr < 0) {
+			Lib.debug(dbgProcess, "handleUnlink: negative filename address " + fileNameVAddr);
+			return -1; // Invalid filename address
+		}
+		
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			Lib.debug(dbgProcess, "handleUnlink: could not read filename from memory");
+			return -1; // Invalid filename address
+		}
+		
+		// Validation step: Check filename length
+		if (filename.length() == 0) {
+			Lib.debug(dbgProcess, "handleUnlink: empty filename");
+			return -1; // Empty filename
+		}
+		
+		// Remove the file from the file system
+		boolean success = ThreadedKernel.fileSystem.remove(filename);
+		if (success) {
+			return 0;
+		} else {
+			return -1;
+		}
+	}
 
     /**
      * Handle the exec() system call.
      */
     private int handleExec(int fileAddr, int argc, int argvAddr) {
-        // Validation steps
-        if (fileAddr < 0) {
-            return -1;
-        }
-        
-        if (argc < 0) {
-            return -1;
-        }
-        
-        // Read the file name
-        String filename = readVirtualMemoryString(fileAddr, 256);
-        if (filename == null) {
-            return -1;
-        }
-        
-        // Ensure the file ends with .coff (COFF executable)
-        if (!filename.endsWith(".coff")) {
-            filename += ".coff";
-        }
-        
-        // Read the arguments
-        String[] args = new String[argc];
-        byte[] buffer = new byte[4];
-        
-        for (int i = 0; i < argc; i++) {
-            // Read the i-th argument pointer
-            int argPointer = argvAddr + i * 4;
-            int bytesRead = readVirtualMemory(argPointer, buffer);
-            if (bytesRead != 4) {
-                return -1;
-            }
-            
-            // Convert bytes to integer pointer
-            int vaddr = Lib.bytesToInt(buffer, 0);
-            
-            // Read the string at the pointer
-            String arg = readVirtualMemoryString(vaddr, 256);
-            if (arg == null) {
-                return -1;
-            }
-            
-            args[i] = arg;
-        }
-        
-        // Create a new process and set parent/child relationship
-        UserProcess childProcess = UserProcess.newUserProcess();
-        childProcess.parent = this;
-        children.add(childProcess);
-        
-        // Try to execute the program
-        if (childProcess.execute(filename, args)) {
-            return childProcess.processID; // Return process ID to indicate success
-        } else {
-            // Execution failed, clean up
-            children.remove(childProcess);
-            UserKernel.numProcessesLock.acquire();
-            UserKernel.numProcesses--;
-            UserKernel.numProcessesLock.release();
-            return -1;
-        }
+        // Stub implementation for now
+        Lib.debug(dbgProcess, "handleExec not implemented yet");
+        return -1;
     }
 
     /**
      * Handle the join() system call.
      */
     private int handleJoin(int processID, int statusAddr) {
-        UserProcess childProcess = null;
-        
-        // Find the child with the specified process ID
-        for (UserProcess child : children) {
-            if (child.processID == processID) {
-                childProcess = child;
-                break;
-            }
-        }
-        
-        // Make sure it's actually a child of this process
-        if (childProcess == null) {
-            return -1;
-        }
-        
-        // Wait for the child to exit
-        childProcess.thread.join();
-        
-        // Check if the child has exited
-        childProcess.statusLock.acquire();
-        boolean hasExited = childProcess.exited;
-        int exitStatus = childProcess.exitStatus;
-        childProcess.statusLock.release();
-        
-        if (!hasExited) {
-            return -1;
-        }
-        
-        // Remove from children list
-        children.remove(childProcess);
-        
-        // Write the exit status to the statusAddr if provided
-        if (statusAddr != 0) {
-            byte[] buffer = new byte[4];
-            Lib.bytesFromInt(buffer, 0, exitStatus);
-            int bytesWritten = writeVirtualMemory(statusAddr, buffer);
-            
-            if (bytesWritten != 4) {
-                return -1;
-            }
-        }
-        
-        return 1; // Success
+        // Stub implementation for now
+        Lib.debug(dbgProcess, "handleJoin not implemented yet");
+        return -1;
     }
 
     private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
@@ -900,6 +785,7 @@ public class UserProcess {
             return handleJoin(a0, a1);
 
         default:
+            Lib.debug(dbgProcess, "Unknown syscall " + syscall);
             Lib.assertNotReached("Unknown system call!");
         }
         return 0;
@@ -927,6 +813,8 @@ public class UserProcess {
             break;
 
         default:
+            Lib.debug(dbgProcess, "Unexpected exception: "
+                    + Processor.exceptionNames[cause]);
             Lib.assertNotReached("Unexpected exception");
         }
     }
