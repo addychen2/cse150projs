@@ -464,6 +464,25 @@ public class UserProcess {
         return 0; // Success
     }
 
+    /**
+	 * Handle the unlink() system call.
+	*/
+	private int handleUnlink(int fileNameVAddr) {
+		// Read the filename from user memory
+		String filename = readVirtualMemoryString(fileNameVAddr, 256);
+		if (filename == null) {
+			return -1;
+		}
+		
+		// Remove the file from the file system
+		boolean success = ThreadedKernel.fileSystem.remove(filename);
+		if (success) {
+			return 0;
+		} else {
+			return -1;
+		}
+	}
+
     private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
             syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
             syscallRead = 6, syscallWrite = 7, syscallClose = 8,
