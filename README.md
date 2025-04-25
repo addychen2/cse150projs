@@ -1,4 +1,4 @@
-# cse150proj1
+# cse150proj2
 
 # Make sure java verion is correct
 ```
