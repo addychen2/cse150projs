@@ -28,6 +28,14 @@ public class UserProcess {
 		pageTable = new TranslationEntry[numPhysPages];
 		for (int i = 0; i < numPhysPages; i++)
 			pageTable[i] = new TranslationEntry(i, i, true, false, false, false);
+		
+		// Project 2 Task 1: Initialize OpenFiles array
+		myFileSlots = new OpenFile[16];
+		// Project 2 Task 1: Initialize stdin/stdout slots in OpenFiles array
+		// File descriptor 0 refers to keyboard input (UNIX stdin)
+		myFileSlots[0] = UserKernel.console.openForReading();
+		// File descriptor 1 refers to display output (UNIX stdout)
+		myFileSlots[1] = UserKernel.console.openForWriting();
 	}
 
 	/**
@@ -351,7 +359,6 @@ public class UserProcess {
 	 * Handle the halt() system call.
 	 */
 	private int handleHalt() {
-
 		Machine.halt();
 
 		Lib.assertNotReached("Machine.halt() did not halt machine!");
@@ -373,11 +380,129 @@ public class UserProcess {
 
 		return 0;
 	}
-
-	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
-			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
-			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
-			syscallUnlink = 9;
+	
+	/**
+	 * Handle the read() system call.
+	 */
+	private int handleRead(int fileDescriptor, int bufferAddress, int count) {
+	    // Check if file descriptor is valid
+	    if (fileDescriptor < 0 || fileDescriptor >= 16 || myFileSlots[fileDescriptor] == null) {
+	        return -1;
+	    }
+	    
+	    // Verify that count is non-negative
+	    if (count < 0) {
+	        return -1;
+	    }
+	    
+	    // If count is 0, return 0 (nothing to read)
+	    if (count == 0) {
+	        return 0;
+	    }
+	    
+	    // Get the file from the file descriptor
+	    OpenFile file = myFileSlots[fileDescriptor];
+	    
+	    // Buffer to store data read from file (use page-sized chunks)
+	    int bytesRead = 0;
+	    byte[] buffer = new byte[Math.min(count, pageSize)];
+	    
+	    // Read from file in chunks and transfer to user memory
+	    while (bytesRead < count) {
+	        int bytesToRead = Math.min(buffer.length, count - bytesRead);
+	        int bytesReadThisTime = file.read(buffer, 0, bytesToRead);
+	        
+	        // If we've reached EOF or an error occurred
+	        if (bytesReadThisTime <= 0) {
+	            break;
+	        }
+	        
+	        // Transfer data from kernel buffer to user memory
+	        int bytesTransferred = writeVirtualMemory(bufferAddress + bytesRead, buffer, 0, bytesReadThisTime);
+	        
+	        // If we couldn't transfer all bytes to user memory, stop reading
+	        if (bytesTransferred < bytesReadThisTime) {
+	            // We partially transferred data, so count what we did transfer
+	            bytesRead += bytesTransferred;
+	            break;
+	        }
+	        
+	        bytesRead += bytesReadThisTime;
+	        
+	        // If we didn't read a full buffer, we've reached EOF
+	        if (bytesReadThisTime < bytesToRead) {
+	            break;
+	        }
+	    }
+	    
+	    return bytesRead;
+	}
+	
+	/**
+	 * Handle the write() system call.
+	 */
+	private int handleWrite(int fileDescriptor, int bufferAddress, int count) {
+	    // Check if file descriptor is valid
+	    if (fileDescriptor < 0 || fileDescriptor >= 16 || myFileSlots[fileDescriptor] == null) {
+	        return -1;
+	    }
+	    
+	    // Verify that count is non-negative
+	    if (count < 0) {
+	        return -1;
+	    }
+	    
+	    // If count is 0, return 0 (nothing to write)
+	    if (count == 0) {
+	        return 0;
+	    }
+	    
+	    // Get the file from the file descriptor
+	    OpenFile file = myFileSlots[fileDescriptor];
+	    
+	    // Buffer to hold data read from user memory (use page-sized chunks)
+	    int bytesWritten = 0;
+	    byte[] buffer = new byte[Math.min(count, pageSize)];
+	    
+	    // Read from user memory in chunks and write to file
+	    while (bytesWritten < count) {
+	        int bytesToWrite = Math.min(buffer.length, count - bytesWritten);
+	        
+	        // Read data from user memory into kernel buffer
+	        int bytesRead = readVirtualMemory(bufferAddress + bytesWritten, buffer, 0, bytesToWrite);
+	        
+	        // If we couldn't read any data from user memory, stop
+	        if (bytesRead <= 0) {
+	            break;
+	        }
+	        
+	        // Write data from kernel buffer to file
+	        int bytesWrittenThisTime = file.write(buffer, 0, bytesRead);
+	        
+	        // If write failed or wrote fewer bytes than requested
+	        if (bytesWrittenThisTime < 0) {
+	            // Write error occurred
+	            if (bytesWritten == 0) {
+	                return -1;  // No bytes written at all, report error
+	            } else {
+	                break;  // Some bytes were written, return that count
+	            }
+	        } else if (bytesWrittenThisTime < bytesRead) {
+	            // Partial write, add to total and stop
+	            bytesWritten += bytesWrittenThisTime;
+	            break;
+	        }
+	        
+	        bytesWritten += bytesWrittenThisTime;
+	        
+	        // If we didn't write a full buffer, the disk might be full
+	        if (bytesWrittenThisTime < bytesToWrite) {
+	            break;
+	        }
+	    }
+	    
+	    return bytesWritten;
+	}
 
 	/**
 	 * Handle a syscall exception. Called by <tt>handleException()</tt>. The
@@ -446,6 +571,10 @@ public class UserProcess {
 			return handleHalt();
 		case syscallExit:
 			return handleExit(a0);
+		case syscallRead:
+			return handleRead(a0, a1, a2);
+		case syscallWrite:
+			return handleWrite(a0, a1, a2);
 
 		default:
 			Lib.debug(dbgProcess, "Unknown syscall " + syscall);
@@ -495,8 +624,11 @@ public class UserProcess {
 	protected final int stackPages = 8;
 
 	/** The thread that executes the user-level program. */
-        protected UThread thread;
+    protected UThread thread;
     
+    /** File descriptors for this process. */
+    protected OpenFile[] myFileSlots;
+
 	private int initialPC, initialSP;
 
 	private int argc, argv;
@@ -504,4 +636,9 @@ public class UserProcess {
 	private static final int pageSize = Processor.pageSize;
 
 	private static final char dbgProcess = 'a';
+	
+	private static final int syscallHalt = 0, syscallExit = 1, syscallExec = 2,
+			syscallJoin = 3, syscallCreate = 4, syscallOpen = 5,
+			syscallRead = 6, syscallWrite = 7, syscallClose = 8,
+			syscallUnlink = 9;
 }
